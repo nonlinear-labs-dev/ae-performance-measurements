@@ -9,7 +9,7 @@ import statistics
 def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
 
-def assert_directory_exists(dir):
+def assert_path_exists(dir):
     if not os.path.exists(dir):
         eprint(f"{dir} does not exist!")
         exit(1)
@@ -20,13 +20,6 @@ def assert_ref_exists(ref, repo):
 def do_command_in_dir(command, src_directory):
     ret = subprocess.run(command.split(" "), cwd=src_directory, capture_output=True)
     return ret
-
-def get_commits_in_chronological_order(start_commit, source_dir):
-    raw_ref_list = do_command_in_dir(f"git rev-list --ancestry-path {args.start_commit}..HEAD", args.source_directory).stdout.decode("utf-8")
-    refs = raw_ref_list.split("\n")
-    refs[:] = [x for x in refs if x]
-    refs.reverse()
-    return refs
 
 def build_ae(build_dir):
     #todo check if we use ninja or make
@@ -53,34 +46,35 @@ def measure_performance_of_build(build_dir):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--start_commit", type=str)
-    parser.add_argument("--branch", type=str)
+    parser.add_argument("--commits_file", type=pathlib.Path)
     parser.add_argument("--build_directory", type=pathlib.Path)
     parser.add_argument("--source_directory", type=pathlib.Path)
     parser.add_argument("--num_runs_per_commit", type=int)
     args = parser.parse_args()
 
-    assert_directory_exists(args.build_directory)
-    assert_directory_exists(args.source_directory)
+    assert_path_exists(args.commits_file)
+    assert_path_exists(args.build_directory)
+    assert_path_exists(args.source_directory)
 
     repo = Repo(args.source_directory)
 
     assert not repo.bare
     assert not repo.is_dirty()
 
-    assert_ref_exists(args.start_commit, repo)
 
-    repo.git.checkout(args.branch)
+    repo.remotes.origin.fetch()
+    
+    with open(args.commits_file) as my_file:
+        refs = my_file.readlines()
 
-    # this takes too long for debugging purposes
-    #repo.remotes.origin.pull()
-    refs = get_commits_in_chronological_order(args.start_commit, args.source_directory)
     print(f"found {len(refs)} commits to check")
 
     # create map to save results to
     total_results = {}
 
     for commit in refs:
+        commit = commit.strip()
+        assert_ref_exists(commit, repo)
         print(f"checking out {commit}")
         repo.git.checkout(commit)
         print(f"building audio-engine @{commit}")
